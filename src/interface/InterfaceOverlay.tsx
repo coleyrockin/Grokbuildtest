@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { organismController } from "../simulation/organismController";
 import { useExperienceStore } from "../experience/store";
+
+const SOURCE_URL = "https://github.com/boydcroberts/Lattice-Tension";
 
 export function InterfaceOverlay() {
   const ready = useExperienceStore((state) => state.ready);
@@ -9,6 +11,18 @@ export function InterfaceOverlay() {
   const [announcement, setAnnouncement] = useState(
     "Aesther is ready. Press Enter or Space to touch the center, or use arrow keys to send a gentle impulse.",
   );
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const aboutToggleRef = useRef<HTMLButtonElement>(null);
+  const aboutCloseRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (aboutOpen) aboutCloseRef.current?.focus();
+  }, [aboutOpen]);
+
+  const closeAbout = () => {
+    setAboutOpen(false);
+    aboutToggleRef.current?.focus();
+  };
 
   const sendKeyboardImpulse = (direction: [number, number], message: string) => {
     organismController.pulseFromKeyboard(direction);
@@ -24,6 +38,21 @@ export function InterfaceOverlay() {
       </header>
 
       <div className="hud-controls">
+        <button
+          ref={aboutToggleRef}
+          className="about-control"
+          type="button"
+          aria-expanded={aboutOpen}
+          aria-controls="about-panel"
+          aria-label={aboutOpen ? "Close about panel" : "About this piece"}
+          onClick={() => setAboutOpen((open) => !open)}
+        >
+          <span className="about-control__label">About</span>
+          <span className="about-control__glyph" aria-hidden="true">
+            i
+          </span>
+        </button>
+
         <button
           className="sound-control"
           type="button"
@@ -41,6 +70,44 @@ export function InterfaceOverlay() {
           </span>
         </button>
       </div>
+
+      {aboutOpen ? (
+        <div
+          id="about-panel"
+          className="about-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="About Aesther"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") closeAbout();
+          }}
+        >
+          <p className="about-panel__body">
+            A living glass organism — a custom raymarched WebGPU shader paired
+            with a real-time modal physics engine: spring-mass shell,
+            multi-touch contact aggregation, non-Newtonian shear response, all
+            driven by one fixed-step controller. Built solo by Boyd Roberts.
+          </p>
+          <div className="about-panel__row">
+            <a
+              className="about-panel__link"
+              href={SOURCE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View source ↗
+            </a>
+            <button
+              ref={aboutCloseRef}
+              className="about-panel__close"
+              type="button"
+              onClick={closeAbout}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <button
         className="organism-accessibility-target"
