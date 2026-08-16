@@ -976,7 +976,11 @@ export function createJellyOrbMaterial(steps: number) {
     const heat = mix(
       mix(
         mix(
-          mix(vec3(0.02, 0.02, 0.09), vec3(0.28, 0.10, 0.42), smoothstep(float(0), float(0.25), cost)),
+          // The cold end is a visible indigo, NOT near-black. Where the shell
+          // bulges toward the camera the march resolves almost immediately, and
+          // an near-black floor made those regions match the void exactly —
+          // reading as a hole punched through the orb rather than as cheap.
+          mix(vec3(0.09, 0.05, 0.26), vec3(0.30, 0.11, 0.45), smoothstep(float(0), float(0.25), cost)),
           vec3(0.73, 0.21, 0.33),
           smoothstep(float(0.25), float(0.5), cost),
         ),
