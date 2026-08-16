@@ -63,6 +63,28 @@ const MAX_FRAME_TIME = 1 / 15;
  * paying for dead slots — see `liveWaves` below. */
 const WAVE_COUNT = 8;
 const MAX_CONTACTS = 5;
+
+/**
+ * Idle attract.
+ *
+ * At rest the frame measures ~4/255 mean luma: the dispersion, iridescence,
+ * absorption and caustics are all authored but gated behind organism energy,
+ * so a visitor who never touches the orb never sees any of it and leaves
+ * looking at a dark blue ball. These send a soft wave through the shell every
+ * few seconds while genuinely untouched, which lifts `energy` through the
+ * existing wave path rather than special-casing the renderer.
+ *
+ * Tuned by measurement, not by eye. A first pass at strength 0.34 / period 3.1
+ * moved rest luma only 4.16 -> 4.57 out of 255 against a driven 12.4: the waves
+ * decayed before they could overlap, so it was invisible and therefore
+ * pointless. These values keep two or three waves alive at once and land rest
+ * at ~6.6 luma / 17% coverage — clearly awake, still roughly half the intensity
+ * of a real drag, so being touched is unmistakably different from being
+ * watched.
+ */
+const IDLE_ATTRACT_DELAY = 1.8;
+const IDLE_ATTRACT_PERIOD = 2.1;
+const IDLE_ATTRACT_STRENGTH = 0.82;
 /** Below this a wave contributes nothing visible and is dropped from the upload. */
 const LIVE_WAVE_EPSILON = 0.004;
 
@@ -149,6 +171,9 @@ export class OrganismController {
   private waveCursor = 0;
   private time = 0;
   private lastWaveAt = -Infinity;
+  private idleAttract = true;
+  private idleTime = 0;
+  private lastAttractAt = -Infinity;
   private resonance = 0;
   private interactionId = 0;
   private readonly contacts = new Map<number, ActiveContact>();
@@ -204,6 +229,8 @@ export class OrganismController {
     this.accumulator = 0;
     this.time = 0;
     this.lastWaveAt = -Infinity;
+    this.idleTime = 0;
+    this.lastAttractAt = -Infinity;
     this.resonance = 0;
     this.interactionId = 0;
     this.contacts.clear();
@@ -414,6 +441,16 @@ export class OrganismController {
     });
   }
 
+  /**
+   * Turn the idle attract off. Wave lifetime, ring-buffer compaction and
+   * return-to-equilibrium are all properties of an orb left alone, so a test
+   * asserting them needs a controller that stays genuinely still — otherwise
+   * it is measuring the attract instead of the thing it names.
+   */
+  setIdleAttract(enabled: boolean) {
+    this.idleAttract = enabled;
+  }
+
   setPresentationScale(scale: number) {
     this.modelScale = clamp(scale, 0.42, ORGANISM_MODEL_SCALE);
     (this.snapshot as { modelScale: number }).modelScale = this.modelScale;
@@ -449,6 +486,32 @@ export class OrganismController {
 
     if (this.input.active && activeVelocity > 0.55 && this.time - this.lastWaveAt > 0.19) {
       this.spawnWave(contact, clamp(0.22 + activeVelocity * 0.09, 0.22, 0.68));
+    }
+
+    // Idle attract. Only while genuinely untouched — any live contact resets
+    // both the timer and the cooldown, so a real interaction always owns the
+    // orb and this never fights the user or fires straight after a release.
+    // Under reduced motion it weakens and slows rather than switching off, so
+    // the piece still shows itself without pulsing at anyone.
+    if (this.idleAttract && !this.input.active && this.contacts.size === 0) {
+      this.idleTime += dt;
+      const attractPeriod = IDLE_ATTRACT_PERIOD / Math.max(motionScale, 0.25);
+      if (
+        this.idleTime > IDLE_ATTRACT_DELAY &&
+        this.time - this.lastAttractAt > attractPeriod
+      ) {
+        // Origin drifts around the shell on two incommensurate rates so the
+        // attract never settles into a visible repeating pattern.
+        const drift = this.time * 0.31;
+        this.spawnWave(
+          [Math.cos(drift) * 0.78, Math.sin(drift * 0.73) * 0.62, 0.7],
+          IDLE_ATTRACT_STRENGTH * motionScale,
+        );
+        this.lastAttractAt = this.time;
+      }
+    } else {
+      this.idleTime = 0;
+      this.lastAttractAt = this.time;
     }
 
     const idleTarget =

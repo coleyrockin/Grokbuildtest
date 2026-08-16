@@ -21,6 +21,9 @@ describe("OrganismController", () => {
 
   it("carries a surface wave across the body before it expires", () => {
     const controller = new OrganismController();
+    // Isolate wave lifetime from the idle attract, which would otherwise keep
+    // spawning fresh waves during the long advances below.
+    controller.setIdleAttract(false);
     expect(controller.beginContact([0, 0, 1])).toBe(true);
     controller.endContact([0, 0], 0);
     advance(controller, 0.1);
@@ -45,6 +48,7 @@ describe("OrganismController", () => {
 
   it("compacts live waves to the front and reports an accurate count", () => {
     const controller = new OrganismController();
+    controller.setIdleAttract(false);
     expect(controller.snapshot.liveWaveCount).toBe(0);
 
     // Eight taps at distinct points fill every ring-buffer slot.
@@ -94,6 +98,9 @@ describe("OrganismController", () => {
 
   it("turns a release into bounded physical energy and a recovery", () => {
     const controller = new OrganismController();
+    // "Recovery" means the release energy has drained away, so the idle attract
+    // must not be topping the orb back up while we wait.
+    controller.setIdleAttract(false);
     const velocity: Vec2Tuple = [2.4, -1.6];
     controller.beginContact([0.2, -0.15, 0.96]);
     controller.moveContact([0.45, -0.25, 0.86], [0.31, -0.18], velocity);
@@ -144,6 +151,9 @@ describe("OrganismController", () => {
 
   it("caps a five-finger release and returns to equilibrium", () => {
     const controller = new OrganismController();
+    // "Equilibrium" here means the release has fully damped out, so the idle
+    // attract must not be re-exciting the orb while we wait for it.
+    controller.setIdleAttract(false);
     const contacts: Array<[number, [number, number, number]]> = [
       [1, [-0.5, -0.18, 0.84]],
       [2, [-0.24, 0.3, 0.92]],
@@ -217,5 +227,106 @@ describe("OrganismController", () => {
     expect(controller.snapshot.slosh).toEqual([0, 0, 0]);
     expect(controller.snapshot.spin).toEqual([0, 0]);
     expect(controller.snapshot.surfaceWaves.every((wave) => wave.strength === 0)).toBe(true);
+  });
+});
+
+describe("idle attract", () => {
+  /** Energy is pulsed, so any single-instant sample lands on an arbitrary point
+   * in the cycle. Every assertion below reads a window instead. */
+  const sampleEnergy = (
+    controller: OrganismController,
+    seconds: number,
+    reducedMotion = false,
+  ) => {
+    let peak = 0;
+    let total = 0;
+    let frames = 0;
+    for (let frame = 0; frame < Math.round(seconds * 60); frame += 1) {
+      controller.advance(1 / 60, reducedMotion);
+      peak = Math.max(peak, controller.snapshot.energy);
+      total += controller.snapshot.energy;
+      frames += 1;
+    }
+    return { peak, mean: total / frames };
+  };
+
+  it("lifts a left-alone orb well clear of the dead rest floor", () => {
+    const still = new OrganismController();
+    still.setIdleAttract(false);
+    const quiet = sampleEnergy(still, 12);
+
+    const attracting = new OrganismController();
+    const awake = sampleEnergy(attracting, 12);
+
+    // The whole point: an untouched orb must not sit at the floor, because a
+    // visitor who never touches it would otherwise see nothing at all.
+    expect(quiet.mean).toBeLessThan(0.05);
+    expect(awake.mean).toBeGreaterThan(quiet.mean * 4);
+  });
+
+  it("stays below the intensity of a real interaction", () => {
+    const attracting = new OrganismController();
+    const awake = sampleEnergy(attracting, 12);
+
+    const dragged = new OrganismController();
+    dragged.beginContact([0, 0, 1]);
+    dragged.input.active = true;
+    dragged.input.displacement[0] = 0.5;
+    dragged.input.velocity[0] = 1.2;
+    const driven = sampleEnergy(dragged, 1.5);
+
+    // Being touched has to remain clearly different from being watched.
+    expect(awake.peak).toBeLessThan(driven.peak);
+  });
+
+  it("suppresses itself entirely while a contact is live", () => {
+    const controller = new OrganismController();
+    sampleEnergy(controller, 6);
+
+    expect(controller.beginContact([0, 0, 1])).toBe(true);
+    controller.advance(1 / 60, false);
+    const waveAges = controller.snapshot.surfaceWaves.map((wave) => wave.age);
+
+    // No attract wave may be born on top of the user's own interaction. A new
+    // spawn resets a slot's age to 0, so ages only ever moving forward is the
+    // proof that nothing spawned. (They clamp at SURFACE_WAVE_LIFETIME, so this
+    // is non-decreasing rather than strictly increasing.)
+    sampleEnergy(controller, 6);
+    controller.snapshot.surfaceWaves.forEach((wave, index) => {
+      expect(wave.age).toBeGreaterThanOrEqual(waveAges[index]!);
+    });
+  });
+
+  it("does not fire immediately after a release", () => {
+    const controller = new OrganismController();
+    controller.beginContact([0, 0, 1]);
+    sampleEnergy(controller, 0.5);
+    controller.endContact([0, 0], 0);
+
+    // The cooldown resets on release, so nothing new spawns inside the delay.
+    controller.advance(1 / 60, false);
+    const fresh = controller.snapshot.surfaceWaves.filter((w) => w.age < 0.05).length;
+    sampleEnergy(controller, 1);
+    const stillFresh = controller.snapshot.surfaceWaves.filter((w) => w.age < 0.05).length;
+    expect(stillFresh).toBeLessThanOrEqual(fresh);
+  });
+
+  it("weakens under reduced motion rather than switching off", () => {
+    const normal = new OrganismController();
+    const full = sampleEnergy(normal, 14);
+
+    const reduced = new OrganismController();
+    const gentle = sampleEnergy(reduced, 14, true);
+
+    expect(gentle.mean).toBeGreaterThan(0);
+    expect(gentle.mean).toBeLessThan(full.mean);
+  });
+
+  it("can be switched off entirely", () => {
+    const controller = new OrganismController();
+    controller.setIdleAttract(false);
+    const quiet = sampleEnergy(controller, 10);
+    expect(quiet.peak).toBeLessThan(0.05);
+    expect(controller.snapshot.liveWaveCount).toBe(0);
   });
 });
