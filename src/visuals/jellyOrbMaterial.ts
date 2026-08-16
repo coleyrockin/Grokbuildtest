@@ -81,6 +81,21 @@ export function createJellyOrbMaterial(steps: number) {
   const stepCount = uniform(steps);
   const animationPhase = phase.mul(motionScale);
 
+  // Inspection seam. `seam` is the split position in screen X (0..1); pixels to
+  // its right render the raymarch step-count heatmap instead of the orb.
+  // `inspect` gates the whole path off so the default view is byte-identical to
+  // the uninspected material. See docs/superpowers/specs/2026-08-15-inspection-seam-design.md
+  const seam = uniform(1.2); // parked off-screen right = seam fully closed
+  const inspect = uniform(0);
+  // Window of the step budget that surface hits actually occupy. Rays never
+  // resolve at 0 steps (they must cross the bounding volume first) and a hit
+  // never costs the full budget (that is a miss), so mapping the raw 0..1
+  // fraction onto the ramp would leave both ends of the scale unused and
+  // flatten the whole picture into one colour. These bounds were measured, not
+  // guessed — see ~/agents/aether-verify/seam.mjs.
+  const costLo = uniform(0.24);
+  const costHi = uniform(0.46);
+
   // Fluid memory: a ring buffer of the last touches, each a direction on the orb
   // (where the touch landed) plus how long ago it fired. Age is accumulated on the
   // CPU side every frame (JellyOrb.tsx), not from shader `time`, so it stays
@@ -231,6 +246,14 @@ export function createJellyOrbMaterial(steps: number) {
     const vOrigin = modelWorldMatrixInverse.mul(vec4(cameraPosition, 1.0)).xyz;
     const rd = normalize(positionGeometry.sub(vOrigin)).toVar();
     const finalColor = vec4(0, 0, 0, 0).toVar(); // transparent void
+    // Work counter for the inspection heatmap. Declared in this Fn's own scope
+    // and written inside the march loop below — the same pattern `finalColor`
+    // already uses. It must NOT be moved into a plain JS helper: `.toVar()`
+    // emits a statement, and a helper that emits statements has to be a real
+    // `Fn()` with `.setLayout()` or the variable is read outside the scope that
+    // fills it. That exact mistake rendered the orb as a full-screen cyan fill
+    // (see the 2026-07-24 material-physics spec).
+    const marchSteps = float(0).toVar();
 
     // Screen-pixel-stable hash decorrelates both fixed-step marches without
     // introducing temporal shimmer. The outer offset stays within a quarter
@@ -243,6 +266,7 @@ export function createJellyOrbMaterial(steps: number) {
     const marchJitter = hash.sub(0.5).mul(float(0.5).div(stepCount));
 
     RaymarchingBox(stepCount, ({ positionRay }) => {
+      marchSteps.addAssign(1);
       const p = positionRay.add(rd.mul(marchJitter)).mul(2.6);
       const d = map(p as ReturnType<typeof vec3>);
 
@@ -930,6 +954,54 @@ export function createJellyOrbMaterial(steps: number) {
       });
     });
 
+    // ---- inspection heatmap -------------------------------------------------
+    // Cost per pixel, normalised against the live `stepCount` uniform so the
+    // ramp stays correct across the high/medium/low tiers (128/96/48 steps)
+    // instead of assuming a maximum. Rays that miss the surface march every
+    // step, so the void around the silhouette reads hottest — that is real,
+    // and it is the most informative part of the picture.
+    // Steps taken to REACH the surface, not steps available. A ray through the
+    // centre hits almost immediately; a grazing ray at the rim crawls most of
+    // the way across the bounding volume first. That contrast is the whole
+    // point of the picture, and it occupies only the lower part of the 0..1
+    // range, so the costLo..costHi window stretches it across the full ramp.
+    //
+    // Earlier version normalised against the raw step budget and showed the
+    // cost of empty space too. It was accurate and useless: the box interior
+    // (marched to the limit, hit nothing) blew out to white and buried the orb.
+    const cost = min(
+      max(marchSteps.div(stepCount).sub(costLo).div(costHi.sub(costLo)), float(0)),
+      float(1),
+    );
+    const heat = mix(
+      mix(
+        mix(
+          mix(vec3(0.02, 0.02, 0.09), vec3(0.28, 0.10, 0.42), smoothstep(float(0), float(0.25), cost)),
+          vec3(0.73, 0.21, 0.33),
+          smoothstep(float(0.25), float(0.5), cost),
+        ),
+        vec3(0.98, 0.55, 0.04),
+        smoothstep(float(0.5), float(0.75), cost),
+      ),
+      vec3(0.99, 0.99, 0.75),
+      smoothstep(float(0.75), float(1), cost),
+    );
+
+    // Branchless select. `mask` is 0 everywhere unless inspection is on AND the
+    // pixel sits right of the seam AND the ray actually reached the surface —
+    // so with inspect=0 this is mix(x, y, 0) === x and the shipped look is
+    // untouched. Gating on the hit is what keeps the void black instead of
+    // painting the bounding box across the screen.
+    const hit = step(float(0.01), finalColor.a);
+    const mask = step(seam, screenUV.x).mul(inspect).mul(hit);
+    finalColor.assign(
+      vec4(mix(finalColor.rgb, heat, mask), mix(finalColor.a, float(1), mask)),
+    );
+
+    // The discard is what keeps the orb's transparency correct, but it would
+    // erase exactly the missed rays that make the heatmap legible. Alpha is
+    // forced to 1 on the heat side above, so this now only culls the void on
+    // the orb side.
     finalColor.a.lessThan(0.01).discard();
     return finalColor;
   });
@@ -978,6 +1050,10 @@ export function createJellyOrbMaterial(steps: number) {
     secondaryContactOrigin,
     secondaryContactPressure,
     stepCount,
+    seam,
+    inspect,
+    costLo,
+    costHi,
     ripple,
   };
 }

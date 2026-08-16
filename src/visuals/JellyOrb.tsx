@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Color, type Intersection, type Mesh, type Raycaster } from "three";
 import { useExperienceStore } from "../experience/store";
+import { seamUniform } from "../interface/seam";
 import { organismController } from "../simulation/organismController";
 import { createJellyOrbMaterial } from "./jellyOrbMaterial";
 
@@ -99,6 +100,13 @@ export function JellyOrb() {
     uniforms.secondaryContactOrigin.value.set(...snapshot.secondaryContactOrigin);
     uniforms.secondaryContactPressure.value = snapshot.secondaryContactPressure * visualScale;
     uniforms.pointer.value.set(...snapshot.pointer);
+
+    // Seam state is read imperatively rather than subscribed to: dragging it
+    // updates every pointer move, and a subscription would re-render the whole
+    // canvas subtree at that rate for a value only the shader needs.
+    const { inspecting, seam } = useExperienceStore.getState();
+    uniforms.inspect.value = inspecting ? 1 : 0;
+    uniforms.seam.value = seamUniform(inspecting, seam);
 
     uploadWaves(uniforms.ripple, snapshot);
 

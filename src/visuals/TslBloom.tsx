@@ -13,6 +13,7 @@ import {
   pass,
   rand,
   screenUV,
+  step,
   uniform,
   vec2,
   vec3,
@@ -21,6 +22,7 @@ import {
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { chromaticAberration } from "three/examples/jsm/tsl/display/ChromaticAberrationNode.js";
 import { useExperienceStore } from "../experience/store";
+import { SEAM_CLOSED, seamUniform } from "../interface/seam";
 import { organismController } from "../simulation/organismController";
 
 const REDUCED_MOTION_SCALE = 0.18;
@@ -91,12 +93,27 @@ export function TslBloom() {
     );
     const grained = vec4(grainedRgb, chromedNode.a);
 
+    // ---- inspection seam ----------------------------------------------------
+    // Right of the seam the heatmap must reach the screen as authored. Every
+    // stage above this point — bloom, black point, contrast, saturation, the
+    // peak compressor, chromatic aberration, grain — is tuned to flatter the
+    // orb, and all of it would shift the ramp's colours until step count no
+    // longer mapped to anything readable. So that side takes the raw scene
+    // texture instead of the graded chain.
+    //
+    // Parked at SEAM_CLOSED (> 1) the mask is 0 for every on-screen pixel, so
+    // the shipped image is bit-for-bit what it was before this landed.
+    const seam = uniform(SEAM_CLOSED);
+    const seamMask = step(seam, screenUV.x);
+    const composited = vec4(mix(grained.rgb, color.rgb, seamMask), grained.a);
+
     const pipeline = new RenderPipeline(gl);
-    pipeline.outputNode = grained;
+    pipeline.outputNode = composited;
 
     return {
       pipeline,
       bloomPass,
+      seam,
       phase,
       motionScale,
       chromaStrength,
@@ -113,6 +130,9 @@ export function TslBloom() {
     const snapshot = organismController.snapshot;
     const energy = Math.min(snapshot.energy, 1);
     const resonance = Math.min(snapshot.resonance, 1);
+
+    const { inspecting, seam } = useExperienceStore.getState();
+    post.seam.value = seamUniform(inspecting, seam);
 
     post.phase.value = snapshot.phase;
     post.motionScale.value = reducedMotion ? REDUCED_MOTION_SCALE : 1;

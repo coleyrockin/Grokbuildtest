@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { organismController } from "../simulation/organismController";
 import { useExperienceStore } from "../experience/store";
+import { SeamControl } from "./SeamControl";
 
 const SOURCE_URL = "https://github.com/boydcroberts/Lattice-Tension";
 
@@ -38,6 +39,8 @@ export function InterfaceOverlay() {
       </header>
 
       <div className="hud-controls">
+        <SeamControl />
+
         <button
           ref={aboutToggleRef}
           className="about-control"

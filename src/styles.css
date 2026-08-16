@@ -531,3 +531,170 @@ button {
     transition-duration: 180ms !important;
   }
 }
+
+/* ---- inspection seam ---------------------------------------------------- */
+
+.seam-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(182, 224, 255, 0.56);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 220ms ease;
+}
+
+.seam-toggle:hover,
+.seam-toggle:focus-visible,
+.seam-toggle.is-active {
+  color: var(--baby-blue);
+}
+
+.seam-toggle:focus-visible {
+  outline: 1px solid rgba(120, 216, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.seam-toggle__label {
+  position: absolute;
+  right: 100%;
+  width: max-content;
+  margin-right: 9px;
+  color: var(--ink-dim);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  opacity: 0;
+  text-transform: uppercase;
+  transition: opacity 180ms ease;
+}
+
+.seam-toggle:hover .seam-toggle__label,
+.seam-toggle:focus-visible .seam-toggle__label,
+.seam-toggle.is-active .seam-toggle__label {
+  opacity: 1;
+}
+
+/* Two panes divided by a line — the glyph states what the control does before
+   it is pressed, which is the whole discoverability problem for this feature. */
+.seam-toggle__glyph {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.seam-toggle__glyph::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 50%;
+  width: 1px;
+  background: currentColor;
+}
+
+.seam {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.seam__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--seam) * 100%);
+  width: 1px;
+  background: rgba(217, 243, 255, 0.85);
+  box-shadow: 0 0 12px rgba(120, 216, 255, 0.5);
+}
+
+.seam__handle {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--seam) * 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: rgba(1, 7, 22, 0.72);
+  border: 1px solid rgba(217, 243, 255, 0.7);
+  color: var(--ink);
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.seam__handle:focus-visible {
+  outline: 1px solid rgba(120, 216, 255, 0.9);
+  outline-offset: 3px;
+}
+
+/* Two chevrons pointing apart: the affordance reads as "drag me sideways"
+   without a tooltip. */
+.seam__grip {
+  width: 16px;
+  height: 8px;
+  background:
+    linear-gradient(45deg, transparent 45%, currentColor 45%, currentColor 60%, transparent 60%) left / 50% 100% no-repeat,
+    linear-gradient(-45deg, transparent 45%, currentColor 45%, currentColor 60%, transparent 60%) right / 50% 100% no-repeat;
+}
+
+.seam__legend {
+  position: absolute;
+  right: max(25px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 148px;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.seam__legend-ramp {
+  height: 4px;
+  border-radius: 2px;
+  /* Must stay in step with the ramp stops in jellyOrbMaterial.ts — if one
+     moves without the other, the legend starts lying about the picture. */
+  background: linear-gradient(
+    90deg,
+    #050517 0%,
+    #471a6b 25%,
+    #ba3654 50%,
+    #fa8c0a 75%,
+    #fcfcbf 100%
+  );
+}
+
+.seam__legend-scale {
+  display: flex;
+  justify-content: space-between;
+}
+
+@media (max-width: 640px) {
+  .seam__legend {
+    right: max(17px, env(safe-area-inset-right));
+    bottom: max(22px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seam-toggle,
+  .seam-toggle__label {
+    transition: none;
+  }
+}
