@@ -24,8 +24,6 @@ export type OrganismSnapshot = Readonly<{
   strainVelocity: number;
   /** Fast surface-tension mode, summed into axial strain by the renderer. */
   skin: number;
-  /** Low-passed deformation rate driving the non-Newtonian response. */
-  shearRate: number;
   axis: Vec3Tuple;
   bend: Vec3Tuple;
   slosh: Vec3Tuple;
@@ -60,8 +58,10 @@ export const SURFACE_WAVE_LIFETIME = 4.5;
 const FIXED_STEP = 1 / 120;
 const MAX_FRAME_TIME = 1 / 15;
 /** Ring-buffer depth for touch memory. Doubled from 4 once the renderer stopped
- * paying for dead slots — see `liveWaves` below. */
-const WAVE_COUNT = 8;
+ * paying for dead slots — see `liveWaves` below. Exported because
+ * `rippleField.ts`'s GPU-side buffer (`RIPPLE_SLOTS`) must match this exactly:
+ * a mismatch silently drops waves rather than erroring. */
+export const WAVE_COUNT = 8;
 const MAX_CONTACTS = 5;
 
 /**
@@ -191,7 +191,6 @@ export class OrganismController {
       strain: 0,
       strainVelocity: 0,
       skin: 0,
-      shearRate: 0,
       axis: [0, 1, 0],
       bend: [0, 0, 0],
       slosh: [0, 0, 0],
@@ -639,7 +638,6 @@ export class OrganismController {
       strain: number;
       strainVelocity: number;
       skin: number;
-      shearRate: number;
       axis: Vec3Tuple;
       bend: Vec3Tuple;
       slosh: Vec3Tuple;
@@ -666,7 +664,6 @@ export class OrganismController {
     snapshot.strain = state.strain;
     snapshot.strainVelocity = state.strainVelocity;
     snapshot.skin = state.skin;
-    snapshot.shearRate = state.shearRate;
     copy3(snapshot.axis, state.axis);
     copy3(snapshot.bend, state.bend);
     copy3(snapshot.slosh, state.slosh);

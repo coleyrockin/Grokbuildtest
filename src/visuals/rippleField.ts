@@ -4,9 +4,12 @@
 // extracted from. App code outside the shaders stays fully type-checked.
 import { Vector4 } from 'three';
 import { Fn, Loop, acos, dot, exp, float, int, max, min, sin, sqrt, uniform, uniformArray, vec3 } from 'three/tsl';
+import { WAVE_COUNT } from '../simulation/organismController';
 
-/** Ring-buffer depth. Must match WAVE_COUNT in organismController.ts. */
-export const RIPPLE_SLOTS = 8;
+/** Ring-buffer depth. Imported from `organismController.ts` — that CPU-side
+ * ring buffer is the source of truth, and this GPU-side buffer must be sized
+ * to match exactly or waves are silently dropped. Do not hardcode this. */
+export const RIPPLE_SLOTS = WAVE_COUNT;
 
 // Dispersion tuning. K_MAX is a march-safety bound as much as a look choice:
 // SDF gradient rises with wavenumber, and the orb oversteps into black speckles
@@ -30,7 +33,10 @@ const K_REFERENCE = 10.5;
  * high tier), so a dead slot is not free — it costs a full acos + exp + sin per
  * step per pixel. The previous four-slot unroll paid all four unconditionally,
  * which meant an untouched orb spent ~512 transcendentals per pixel per frame
- * rendering nothing. At rest this now costs zero.
+ * rendering nothing. At rest `liveCount` is 0, so the loop body doesn't execute
+ * at all — analytically that's zero of those transcendentals per pixel, not just
+ * fewer. This is instruction-count reasoning about the generated shader, not a
+ * measured frame-time or GPU-profiler result.
  */
 export function createRippleField() {
   // xyz = surface origin (unit), w = strength.
@@ -89,10 +95,14 @@ export function createRippleField() {
    * Summed displacement from every live wave, in SDF units.
    *
    * Incoherent superposition of N waves grows as sqrt(N), so the sum is scaled by
-   * min(1, 2/sqrt(N)): exactly 1.0 for 1-4 waves (preserving the previous look
-   * bit-for-bit at the old capacity) and 0.707 at 8. This is what keeps the added
-   * SDF gradient inside what the sphere-trace tolerates — overstep here shows up
-   * as black speckles punched through the orb, not as a subtle artifact.
+   * min(1, 2/sqrt(N)): no attenuation for 1-4 waves (the factor is exactly 1.0)
+   * and 0.707 at 8. This bounds only the amplitude of the summed result — it does
+   * NOT reproduce the old fixed-4-slot look bit-for-bit, because the dispersion
+   * tuning inside `rippleWave` (`K_BASE`, `ENVELOPE` above) changes each wave's
+   * shape independent of this normalization. What this factor actually protects
+   * is the added SDF gradient staying inside what the sphere-trace tolerates —
+   * overstep here shows up as black speckles punched through the orb, not as a
+   * subtle artifact.
    */
   // MUST be a real TSL function, not a plain JS helper. `.toVar()` and `Loop()`
   // emit statements, and this is called from inside `map()` — which the raymarch

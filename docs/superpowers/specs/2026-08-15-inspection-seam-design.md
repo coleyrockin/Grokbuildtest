@@ -225,11 +225,23 @@ so it can be lifted, but it is not prematurely generalised into a package.
 
 Carried forward from the paused audit, deliberately untouched:
 
-- `snapshot.shearRate` is written but never read
-- `RIPPLE_SLOTS` and `WAVE_COUNT` are coupled only by a comment
+- `snapshot.shearRate` is written but never read — **resolved 2026-08-17**: the
+  public snapshot field was removed; the internal `JellyDynamicsState.shearRate`
+  stayed, since it still feeds `effectiveCompliance`/`effectiveDamping` in
+  `jellyDynamics.ts`.
+- `RIPPLE_SLOTS` and `WAVE_COUNT` are coupled only by a comment — **resolved
+  2026-08-17**: `rippleField.ts` now imports `WAVE_COUNT` from
+  `organismController.ts` and derives `RIPPLE_SLOTS` from it, with a coupling
+  test guarding against future drift.
 - The `rippleSum` docblock's "bit-for-bit" claim is stale since dispersion landed
-- `jellyOrbMaterial.ts` exceeds the 800-line flag
+  — **resolved 2026-08-17**: docblock rewritten to describe only what the
+  normalization bounds (summed amplitude), not the per-wave shape, which the
+  dispersion constants (`K_BASE`, `ENVELOPE`) already changed independent of it.
+- `jellyOrbMaterial.ts` exceeds the 800-line flag — still open, out of scope for
+  the 2026-08-17 pass.
 
-The unmeasured "rest costs zero" perf claim is *not* on this list — the idle
-attract state changes rest behaviour, so that claim is either measured or
-removed as part of this work.
+The unmeasured "rest costs zero" perf claim was resolved 2026-08-17 by removal
+rather than measurement: no perf harness was built. The docblock in
+`rippleField.ts` now states the zero-cost claim as instruction-count reasoning
+about the generated shader (the loop body doesn't execute at `liveCount` 0),
+not as a measured frame-time or GPU-profiler result.
